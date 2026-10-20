@@ -1,0 +1,13 @@
+{
+  "name": "jamf-latam-lead-gen",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "cookie-session": "^2.1.0",
+    "express": "^4.21.2"
+  }
+}
+

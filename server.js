@@ -41,7 +41,8 @@ app.get('/api/companies', requireAuth, (req, res) => {
 app.get('/api/companies/:id', requireAuth, (req, res) => {
   const row = leads[Number(req.params.id)];
   if (!row) return res.status(404).json({ error: 'Empresa no encontrada.' });
-  res.json(row);
+  const normalizedRow = Object.fromEntries(columns.map(column => [column, row[column] ?? '']));
+  res.json(normalizedRow);
 });
 app.get('/api/companies/:id/csv', requireAuth, (req, res) => {
   const row = leads[Number(req.params.id)];

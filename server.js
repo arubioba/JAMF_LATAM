@@ -12,6 +12,7 @@ const adminPassword = process.env.ADMIN_PASSWORD;
 const sessionSecret = process.env.SESSION_SECRET || 'change-this-session-secret';
 const leads = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'leads.json'), 'utf8'));
 const columns = leads.length ? Object.keys(leads[0]) : [];
+const industryColumn = columns.find(column => column.trim().toLowerCase() === 'industry') || 'Industry';
 
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
@@ -29,13 +30,13 @@ app.post('/api/login', (req, res) => {
 app.post('/api/logout', (req, res) => { req.session = null; res.json({ ok: true }); });
 app.get('/api/session', (req, res) => res.json({ authenticated: isAuthenticated(req) }));
 app.get('/api/industries', requireAuth, (req, res) => {
-  const industries = [...new Set(leads.map(row => row.Industry).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const industries = [...new Set(leads.map(row => row[industryColumn]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   res.json(industries);
 });
 app.get('/api/companies', requireAuth, (req, res) => {
   const industry = String(req.query.industry || '');
   if (!industry) return res.json([]);
-  res.json(leads.filter(row => row.Industry === industry).map((row, index) => ({ id: leads.indexOf(row), name: row['Company Name'] || 'Empresa sin nombre', city: row['Company City'] || row.City || '', country: row['Company Country'] || row.Country || '' })));
+  res.json(leads.filter(row => row[industryColumn] === industry).map((row, index) => ({ id: leads.indexOf(row), name: row['Company Name'] || 'Empresa sin nombre', city: row['Company City'] || row.City || '', country: row['Company Country'] || row.Country || '' })));
 });
 app.get('/api/companies/:id', requireAuth, (req, res) => {
   const row = leads[Number(req.params.id)];

@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Lead Gen System Powered by Trusted Access</title><link rel="stylesheet" href="/styles.css"></head>
+<body>
+  <div id="login-view" class="auth-shell"><div class="auth-card"><img src="/trusted-access-logo-gradient.svg" alt="Trusted Access" class="logo login-logo"><p class="eyebrow">JAMF LATAM</p><h1>Lead Gen System</h1><p class="muted">Powered by Trusted Access</p><form id="login-form"><label>Usuario<input name="username" autocomplete="username" required></label><label>Contraseña<input name="password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">Ingresar</button><p id="login-error" class="error"></p></form></div></div>
+  <div id="app-view" class="hidden"><header class="topbar"><img src="/trusted-access-logo-gradient.svg" alt="Trusted Access" class="logo"><div><span class="brand-title">Lead Gen System</span><span class="brand-subtitle">Powered by Trusted Access</span></div><button id="logout" class="ghost">Cerrar sesión</button></header><main class="container"><section class="intro"><p class="eyebrow">PROSPECCIÓN JAMF LATAM</p><h1>Encuentra prospectos con alta propensión de compra</h1><p>Este sistema te ayudará a encontrar prospectos con alta propensión de compra para JAMF y te dará insights relevantes para que prepares tu interacción comercial.</p></section><section class="workspace"><aside class="filter-card"><label for="industry">Industria</label><select id="industry"><option value="">Selecciona una industria</option></select><div id="result-count" class="result-count">Selecciona una industria para comenzar.</div><div id="company-list" class="company-list"></div></aside><article id="detail" class="detail-card empty"><div><span class="empty-icon">⌕</span><h2>Selecciona una empresa</h2><p>Elige una empresa de la lista para consultar sus datos completos.</p></div></article></section></main></div>
+  <script src="/app.js"></script>
+</body>
+</html>
+

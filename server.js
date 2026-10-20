@@ -89,10 +89,32 @@ app.get('/api/industries', requireAuth, (req, res) => {
   const industries = [...new Set(leads.map(row => String(row[industryColumn] ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   res.json(industries);
 });
+function normalizeDomain(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (!raw) return '';
+  try { return new URL(/^https?:\\/\\//i.test(raw) ? raw : 'https://' + raw).hostname.replace(/^www\\./, ''); }
+  catch { return raw.replace(/^https?:\\/\\//, '').split('/')[0].replace(/^www\\./, ''); }
+}
+function companyKey(row) {
+  return normalizeDomain(row.Website) || String(row['Company Name'] || '').trim().toLowerCase() || 'company-' + leads.indexOf(row);
+}
+function companyGroups(industry) {
+  const groups = new Map();
+  leads.forEach((row, index) => {
+    if (row[industryColumn] !== industry) return;
+    const key = companyKey(row);
+    if (!groups.has(key)) groups.set(key, { id: index, key, rows: [] });
+    groups.get(key).rows.push(row);
+  });
+  return [...groups.values()];
+}
 app.get('/api/companies', requireAuth, (req, res) => {
   const industry = String(req.query.industry || '');
   if (!industry) return res.json([]);
-  res.json(leads.filter(row => row[industryColumn] === industry).map((row, index) => ({ id: leads.indexOf(row), name: row['Company Name'] || 'Empresa sin nombre', city: row['Company City'] || row.City || '', country: row['Company Country'] || row.Country || '' })));
+  res.json(companyGroups(industry).map(group => {
+    const row = group.rows[0];
+    return { id: group.id, name: row['Company Name'] || 'Empresa sin nombre', city: row['Company City'] || row.City || '', country: row['Company Country'] || row.Country || '', domain: group.key, contactCount: group.rows.length };
+  }));
 });
 app.get('/api/companies/:id', requireAuth, (req, res) => {
   const row = leads[Number(req.params.id)];
@@ -110,13 +132,21 @@ app.post('/api/companies/:id/playbook', requireAuth, async (req, res) => {
     res.json(fallbackPlaybook(row));
   }
 });
+app.get('/api/companies/:id/contacts', requireAuth, (req, res) => {
+  const row = leads[Number(req.params.id)];
+  if (!row) return res.status(404).json({ error: 'Empresa no encontrada.' });
+  const key = companyKey(row);
+  res.json(leads.filter(candidate => companyKey(candidate) === key).map(candidate => Object.fromEntries(columns.map(column => [column, candidate[column] ?? '']))));
+});
 app.get('/api/companies/:id/csv', requireAuth, (req, res) => {
   const row = leads[Number(req.params.id)];
   if (!row) return res.status(404).send('Empresa no encontrada');
-  const csv = `${columns.map(csvEscape).join(',')}\r\n${columns.map(column => csvEscape(row[column])).join(',')}\r\n`;
+  const key = companyKey(row);
+  const matchingRows = leads.filter(candidate => companyKey(candidate) === key);
+  const csv = columns.map(csvEscape).join(',') + '\\r\\n' + matchingRows.map(candidate => columns.map(column => csvEscape(candidate[column])).join(',')).join('\\r\\n') + '\\r\\n';
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="jamf-lead-${Number(req.params.id) + 1}.csv"`);
-  res.send('\ufeff' + csv);
+  res.setHeader('Content-Disposition', `attachment; filename="jamf-lead-${Number(req.params.id) + 1}-empresa.csv"`);
+  res.send('\\ufeff' + csv);
 });
 
 app.use(express.static(path.join(__dirname, 'public')));

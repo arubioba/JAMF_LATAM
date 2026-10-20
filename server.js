@@ -92,8 +92,8 @@ app.get('/api/industries', requireAuth, (req, res) => {
 function normalizeDomain(value) {
   const raw = String(value || '').trim().toLowerCase();
   if (!raw) return '';
-  try { return new URL(/^https?:\\/\\//i.test(raw) ? raw : 'https://' + raw).hostname.replace(/^www\\./, ''); }
-  catch { return raw.replace(/^https?:\\/\\//, '').split('/')[0].replace(/^www\\./, ''); }
+  try { return new URL(/^https?:\/\//i.test(raw) ? raw : 'https://' + raw).hostname.replace(/^www\./, ''); }
+  catch { return raw.replace(/^https?:\/\//, '').split('/')[0].replace(/^www\./, ''); }
 }
 function companyKey(row) {
   return normalizeDomain(row.Website) || String(row['Company Name'] || '').trim().toLowerCase() || 'company-' + leads.indexOf(row);

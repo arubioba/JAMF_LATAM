@@ -23,7 +23,7 @@ function csvEscape(value) { const text = String(value ?? ''); return /[",\n\r]/.
 
 app.post('/api/login', (req, res) => {
   if (!adminPassword) return res.status(500).json({ error: 'Falta configurar ADMIN_PASSWORD en Railway.' });
-  if (req.body.username === adminUser && req.body.password === adminPassword) { req.session.authenticated = true; return res.json({ ok: true }); }
+  if (req.body.username === adminUser && req.body.password === adminPassword) { req.session = { authenticated: true }; return res.json({ ok: true }); }
   return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' });
 });
 app.post('/api/logout', (req, res) => { req.session = null; res.json({ ok: true }); });

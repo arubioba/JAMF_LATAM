@@ -27,6 +27,57 @@ function isAuthenticated(req) { return Boolean(req.session?.authenticated); }
 function requireAuth(req, res, next) { if (!isAuthenticated(req)) return res.status(401).json({ error: 'No autorizado' }); next(); }
 function csvEscape(value) { const text = String(value ?? ''); return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text; }
 
+function playbookContext(row) {
+  const allowed = ['Company Name', 'Industry', '# Employees', 'Technologies', 'Solución JAMF Recomendada', 'Approach Comercial Recomendado', 'Title', 'Company City', 'Company Country', 'Website'];
+  return Object.fromEntries(allowed.filter(key => columns.includes(key)).map(key => [key, row[key] ?? '']));
+}
+function fallbackPlaybook(row) {
+  const company = row['Company Name'] || 'esta empresa';
+  const industry = row['Industry'] || 'su industria';
+  const tech = row['Technologies'] || 'su entorno tecnológico actual';
+  const topics = [
+    ['🚀', 'Productividad de primera línea', company + ' puede conectar a sus equipos de ' + industry + ' con las aplicaciones y datos que necesitan en dispositivos Apple, mejorando la experiencia del cliente.'],
+    ['🛡️', 'Seguridad y Zero Trust', 'Explore cómo proteger el entorno de ' + company + ' con controles de acceso, bloqueo remoto y defensa contra amenazas, especialmente junto a ' + tech + '.'],
+    ['✅', 'Cumplimiento automatizado', 'Conecte las políticas de Jamf con los requisitos de ' + industry + ': configuraciones seguras, actualizaciones y verificaciones remotas.'],
+    ['⚡', 'Despliegue Zero-Touch', 'Posicione la suite Jamf como una forma de entregar equipos listos para trabajar, automatizar aplicaciones y escalar sin cargar al equipo de TI.'],
+    ['📱', 'Dispositivos compartidos', 'Jamf Setup y Jamf Reset permiten adaptar el equipo por rol, usar SSO y limpiar los datos al finalizar cada jornada.']
+  ].map(([icon, title, text]) => ({ icon, title, text }));
+  const questions = [
+    ['🔎', 'Visibilidad y control', '¿Cómo administra y monitorea hoy los dispositivos Apple distribuidos en ' + company + '?'],
+    ['🛡️', 'Riesgo y cumplimiento', '¿Qué controles utilizan para demostrar cumplimiento y evitar fugas de información en ' + industry + '?'],
+    ['💬', 'Fricción operativa', '¿Qué impacto tiene para sus clientes y colaboradores que un equipo falle o no tenga la aplicación correcta?'],
+    ['👥', 'Equipos compartidos', '¿Cómo aseguran que cada turno acceda solo a las herramientas de su rol y deje el equipo limpio?'],
+    ['📈', 'Carga de TI y escala', '¿Cuánto trabajo manual requeriría desplegar cientos de dispositivos Apple en ' + company + '?']
+  ].map(([icon, title, text]) => ({ icon, title, text }));
+  return { talking_points: topics, qualifying_questions: questions, source: 'fallback' };
+}
+function normalizePlaybook(value, row) {
+  const fallback = fallbackPlaybook(row);
+  const clean = (items, fallbackItems) => Array.isArray(items) && items.length >= 5
+    ? items.slice(0, 5).map((item, index) => ({ icon: String(item.icon || fallbackItems[index].icon), title: String(item.title || fallbackItems[index].title), text: String(item.text || fallbackItems[index].text) }))
+    : fallbackItems;
+  return { talking_points: clean(value?.talking_points, fallback.talking_points), qualifying_questions: clean(value?.qualifying_questions, fallback.qualifying_questions), source: value?.source || 'claude' };
+}
+async function generateClaudePlaybook(row) {
+  if (!process.env.ANTHROPIC_API_KEY) return fallbackPlaybook(row);
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({
+      model: process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001',
+      max_tokens: 1800,
+      system: 'Eres un especialista senior de ventas de Jamf para LATAM. Personaliza un playbook comercial práctico en español usando exclusivamente el contexto de la empresa y el playbook base. No inventes datos, no menciones que eres IA. Devuelve únicamente JSON válido sin markdown, con exactamente cinco objetos con icon, title y text en talking_points y qualifying_questions. Playbook base:\n' + playbookSource,
+      messages: [{ role: 'user', content: 'Contexto de la empresa:\n' + JSON.stringify(playbookContext(row), null, 2) }]
+    })
+  });
+  if (!response.ok) throw new Error('Claude playbook request failed');
+  const payload = await response.json();
+  const text = payload.content?.find(item => item.type === 'text')?.text;
+  if (!text) throw new Error('Claude returned no playbook');
+  const cleanText = text.replace(/^\s*\`\`\`json\s*/i, '').replace(/\s*\`\`\`\s*$/i, '').trim();
+  return normalizePlaybook(JSON.parse(cleanText), row);
+}
+
 app.post('/api/login', (req, res) => {
   if (!adminPassword) return res.status(500).json({ error: 'Falta configurar ADMIN_PASSWORD en Railway.' });
   if (req.body.username === adminUser && req.body.password === adminPassword) { req.session = { authenticated: true }; return res.json({ ok: true }); }
@@ -53,7 +104,7 @@ app.post('/api/companies/:id/playbook', requireAuth, async (req, res) => {
   const row = leads[Number(req.params.id)];
   if (!row) return res.status(404).json({ error: 'Empresa no encontrada.' });
   try {
-    res.json(await generateOpenAIPlaybook(row));
+    res.json(await generateClaudePlaybook(row));
   } catch (error) {
     console.error('Playbook generation fallback:', error.message);
     res.json(fallbackPlaybook(row));

@@ -13,6 +13,7 @@ const sessionSecret = process.env.SESSION_SECRET || 'change-this-session-secret'
 const leads = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'leads.json'), 'utf8'));
 const columns = leads.length ? Object.keys(leads[0]) : [];
 const industryColumn = columns.find(column => column.trim().toLowerCase() === 'industry') || 'Industry';
+const industries = [...new Set(leads.map(row => String(row[industryColumn] ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
@@ -30,7 +31,7 @@ app.post('/api/login', (req, res) => {
 app.post('/api/logout', (req, res) => { req.session = null; res.json({ ok: true }); });
 app.get('/api/session', (req, res) => res.json({ authenticated: isAuthenticated(req) }));
 app.get('/api/industries', requireAuth, (req, res) => {
-  const industries = [...new Set(leads.map(row => row[industryColumn]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const industries = [...new Set(leads.map(row => String(row[industryColumn] ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   res.json(industries);
 });
 app.get('/api/companies', requireAuth, (req, res) => {

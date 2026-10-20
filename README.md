@@ -15,3 +15,6 @@ Railway detectará `railway.json`, instalará las dependencias y ejecutará `npm
 
 La fuente inicial está en `data/leads.json`, generada desde la hoja `Contacts` del Excel proporcionado. La hoja vacía `Hoja 1` no se utiliza.
 
+
+
+Deploy sync marker: access fix.

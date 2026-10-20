@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
+app.set('trust proxy', 1);
 const port = process.env.PORT || 3000;
 const adminUser = process.env.ADMIN_USER || 'admin';
 const adminPassword = process.env.ADMIN_PASSWORD;
@@ -17,7 +18,7 @@ const industries = [...new Set(leads.map(row => String(row[industryColumn] ?? ''
 
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
-app.use(cookieSession({ name: 'jamf_session', keys: [sessionSecret], httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', maxAge: 8 * 60 * 60 * 1000 }));
+app.use(cookieSession({ name: 'jamf_session', keys: [sessionSecret], httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', proxy: true, maxAge: 8 * 60 * 60 * 1000 }));
 
 function isAuthenticated(req) { return Boolean(req.session?.authenticated); }
 function requireAuth(req, res, next) { if (!isAuthenticated(req)) return res.status(401).json({ error: 'No autorizado' }); next(); }

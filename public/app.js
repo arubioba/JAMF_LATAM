@@ -11,14 +11,28 @@ async function searchCompanies() {
   try {
     const companies = await api(`/api/companies?industry=${encodeURIComponent(industry.value)}`);
     $('#result-count').textContent = `${companies.length} empresa${companies.length === 1 ? '' : 's'} encontrada${companies.length === 1 ? '' : 's'}.`;
-    list.innerHTML = companies.map(company => `<button class="company-link" data-id="${company.id}">${escapeHtml(company.name)}<span class="company-meta">${escapeHtml([company.city, company.country].filter(Boolean).join(', '))}</span></button>`).join('');
+    list.innerHTML = companies.map(company => `<button class="company-link" data-id="${company.id}">${escapeHtml(company.name)}<span class="company-meta">${escapeHtml([company.city, company.country].filter(Boolean).join(', '))}</span><span class="company-count">${company.contactCount} contacto${company.contactCount === 1 ? '' : 's'}</span></button>`).join('');
     list.querySelectorAll('.company-link').forEach(button => button.addEventListener('click', () => selectCompany(button.dataset.id, button)));
   } catch (e) { $('#result-count').textContent = e.message; }
 }
 industry.addEventListener('change', () => { if (industry.value) searchCompanies(); });
 $('#search-companies').addEventListener('click', searchCompanies);
-async function selectCompany(id, button) { list.querySelectorAll('.company-link').forEach(item => item.classList.remove('active')); button.classList.add('active'); const row = await api(`/api/companies/${id}`); detail.className = 'detail-card'; const entries = Object.entries(row).filter(([key]) => key !== 'Technologies'); const technologies = row.Technologies; detail.innerHTML = `<div class="detail-header"><div><p>Empresa seleccionada</p><h2>${escapeHtml(row['Company Name'] || 'Empresa sin nombre')}</h2><p>${escapeHtml(row.Industry || '')}</p></div><div class="detail-actions"><a class="download" href="/api/companies/${id}/csv">Descargar CSV</a><button class="playbook-button" id="generate-playbook" type="button">🧭 Playbook</button></div></div><div class="fields">${entries.map(([key, value]) => `<div class="field"><span class="field-name">${escapeHtml(key)}</span><span class="field-value">${renderFieldValue(key, value)}</span></div>`).join('')}<div class="field field-wide"><span class="field-name">Technologies</span><span class="field-value">${escapeHtml(technologies || '—')}</span></div></div><div id="playbook-output"></div>`;
-  $('#generate-playbook').addEventListener('click', () => generatePlaybook(id)); }
+async function selectCompany(id, button) {
+  list.querySelectorAll('.company-link').forEach(item => item.classList.remove('active'));
+  button.classList.add('active');
+  const [row, contacts] = await Promise.all([api(`/api/companies/${id}`), api(`/api/companies/${id}/contacts`)]);
+  detail.className = 'detail-card';
+  const contactFields = new Set(['First Name','Last Name','Title','Email','Work Direct Phone','Home Phone','Mobile Phone','Corporate Phone','Person Linkedin Url','Secondary Email']);
+  const entries = Object.entries(row).filter(([key]) => key !== 'Technologies' && !contactFields.has(key));
+  const technologies = row.Technologies;
+  const contactRows = contacts.map(contact => {
+    const name = [contact['First Name'], contact['Last Name']].filter(Boolean).join(' ') || 'Contacto sin nombre';
+    const links = [contact.Email && `<a class="contact-link" href="mailto:${escapeHtml(contact.Email)}">${escapeHtml(contact.Email)}</a>`, contact['Person Linkedin Url'] && renderFieldValue('Person Linkedin Url', contact['Person Linkedin Url'])].filter(Boolean).join(' · ');
+    return `<div class="contact-row"><div><strong>${escapeHtml(name)}</strong><span>${escapeHtml(contact.Title || 'Cargo no disponible')}</span></div><div class="contact-links">${links || '—'}</div></div>`;
+  }).join('');
+  detail.innerHTML = `<div class="detail-header"><div><p>Empresa seleccionada</p><h2>${escapeHtml(row['Company Name'] || 'Empresa sin nombre')}</h2><p>${escapeHtml(row.Industry || '')}</p></div><div class="detail-actions"><a class="download" href="/api/companies/${id}/csv">Descargar CSV (${contacts.length} contactos)</a><button class="playbook-button" id="generate-playbook" type="button">🧭 Playbook</button></div></div><div class="fields">${entries.map(([key, value]) => `<div class="field"><span class="field-name">${escapeHtml(key)}</span><span class="field-value">${renderFieldValue(key, value)}</span></div>`).join('')}<div class="field field-wide"><span class="field-name">Technologies</span><span class="field-value">${escapeHtml(technologies || '—')}</span></div></div><section class="contacts-section"><h3>👥 Contactos de la empresa <span>${contacts.length}</span></h3><div class="contacts-list">${contactRows}</div></section><div id="playbook-output"></div>`;
+  $('#generate-playbook').addEventListener('click', () => generatePlaybook(id));
+}
 $('#login-form').addEventListener('submit', async (event) => { event.preventDefault(); const form = event.currentTarget; $('#login-error').textContent = ''; const body = Object.fromEntries(new FormData(form)); try { await api('/api/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }); form.reset(); showApp(true); } catch (e) { $('#login-error').textContent = e.message; } });
 $('#logout').addEventListener('click', async () => { await api('/api/logout', { method: 'POST' }); showApp(false); });
 function showError(message) { $('#login-error').textContent = message; }

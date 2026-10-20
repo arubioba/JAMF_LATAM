@@ -2,4 +2,5 @@
 /* Draft review adjustment */
 .login-logo{width:260px}
 .topbar .logo{width:220px}
+.field-wide{grid-column:1/-1}
 

@@ -15,6 +15,9 @@ const leads = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'leads.jso
 const columns = leads.length ? Object.keys(leads[0]) : [];
 const industryColumn = columns.find(column => column.trim().toLowerCase() === 'industry') || 'Industry';
 const industries = [...new Set(leads.map(row => String(row[industryColumn] ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+const playbookSource = fs.existsSync(path.join(__dirname, 'data', 'playbook_comercial_jamf.md'))
+  ? fs.readFileSync(path.join(__dirname, 'data', 'playbook_comercial_jamf.md'), 'utf8')
+  : '';
 
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
@@ -45,6 +48,16 @@ app.get('/api/companies/:id', requireAuth, (req, res) => {
   if (!row) return res.status(404).json({ error: 'Empresa no encontrada.' });
   const normalizedRow = Object.fromEntries(columns.map(column => [column, row[column] ?? '']));
   res.json(normalizedRow);
+});
+app.post('/api/companies/:id/playbook', requireAuth, async (req, res) => {
+  const row = leads[Number(req.params.id)];
+  if (!row) return res.status(404).json({ error: 'Empresa no encontrada.' });
+  try {
+    res.json(await generateOpenAIPlaybook(row));
+  } catch (error) {
+    console.error('Playbook generation fallback:', error.message);
+    res.json(fallbackPlaybook(row));
+  }
 });
 app.get('/api/companies/:id/csv', requireAuth, (req, res) => {
   const row = leads[Number(req.params.id)];

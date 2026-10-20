@@ -6,3 +6,5 @@
 
 
 .search-button{display:block;margin-top:14px;padding:10px 18px;font-size:14px;min-width:0;width:auto;}
+
+.field-link{color:#9ca8ff;text-decoration:underline;text-decoration-color:#d95ad8;text-underline-offset:3px;word-break:break-word}.field-link:hover{color:#fff}

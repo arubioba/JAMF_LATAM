@@ -104,7 +104,9 @@ async function generateClaudePlaybook(row) {
   const text = payload.content?.find(item => item.type === 'text')?.text;
   if (!text) throw new Error('Claude returned no playbook');
   const cleanText = text.replace(/^\s*\`\`\`json\s*/i, '').replace(/\s*\`\`\`\s*$/i, '').trim();
-  const result = normalizePlaybook(JSON.parse(cleanText), row);\n  if (!playbookQualityCheck(result, row)) throw new Error('Claude generated a generic playbook');\n  return result;
+  const result = normalizePlaybook(JSON.parse(cleanText), row);
+  if (!playbookQualityCheck(result, row)) throw new Error('Claude generated a generic playbook');
+  return result;
 }
 
 app.post('/api/login', (req, res) => {

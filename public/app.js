@@ -41,15 +41,16 @@ function escapeHtml(value) { return String(value).replace(/[&<>"']/g, character 
 api('/api/session').then(({ authenticated }) => showApp(authenticated)).catch(() => showApp(false));
 
 
-async function generatePlaybook(id) {
+async function generatePlaybook(id, regenerate = false) {
   const button = $('#generate-playbook');
   const output = $('#playbook-output');
   button.disabled = true; button.textContent = 'Generando…';
   output.innerHTML = '<div class="playbook-loading">Preparando playbook personalizado…</div>';
   try {
-    const playbook = await api(`/api/companies/${id}/playbook`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+    const playbook = await api(`/api/companies/${id}/playbook${regenerate ? '?regenerate=1' : ''}`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
     const render = (items) => items.map(item => `<div class="playbook-item"><span class="playbook-item-icon">${escapeHtml(item.icon)}</span><div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.text)}</p></div></div>`).join('');
     output.innerHTML = `<section class="playbook-section"><article class="playbook-card"><h3>🗣️ Key Talking Points</h3>${render(playbook.talking_points)}</article><article class="playbook-card"><h3>🎯 Preguntas clave de calificación</h3>${render(playbook.qualifying_questions)}</article></section>`;
   } catch (error) { output.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`; }
-  button.disabled = false; button.textContent = '🧭 Playbook';
+  button.disabled = false; button.textContent = playbook.source === 'cache' ? '↻ Regenerar Playbook' : '🧭 Playbook';
+  if (playbook.source === 'cache' || playbook.source === 'generated') button.onclick = () => generatePlaybook(id, true);
 }

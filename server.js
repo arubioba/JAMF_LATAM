@@ -50,24 +50,35 @@ function playbookContext(row) {
   return context;
 }
 function fallbackPlaybook(row) {
-  const company = row['Company Name'] || 'esta empresa';
-  const industry = row['Industry'] || 'su industria';
-  const tech = row['Technologies'] || 'su entorno tecnológico actual';
+  const company = row['Company Name'] || 'esta cuenta';
+  const industry = row['Industry'] || 'su sector';
+  const role = row.Title || 'el responsable de tecnología';
+  const tech = String(row.Technologies || '').toLowerCase();
+  const hasCloud = /cloudflare|cdn|cloud|saas|google workspace|microsoft|office 365/.test(tech);
+  const hasCollab = /slack|teams|google meet|zoom|drive|sharepoint|jira/.test(tech);
+  const hasWeb = /wordpress|web|ecommerce|shopify/.test(tech);
   const topics = [
-    ['🚀', 'Productividad de primera línea', company + ' puede conectar a sus equipos de ' + industry + ' con las aplicaciones y datos que necesitan en dispositivos Apple, mejorando la experiencia del cliente.'],
-    ['🛡️', 'Seguridad y Zero Trust', 'Explore cómo proteger el entorno de ' + company + ' con controles de acceso, bloqueo remoto y defensa contra amenazas, especialmente junto a ' + tech + '.'],
-    ['✅', 'Cumplimiento automatizado', 'Conecte las políticas de Jamf con los requisitos de ' + industry + ': configuraciones seguras, actualizaciones y verificaciones remotas.'],
-    ['⚡', 'Despliegue Zero-Touch', 'Posicione la suite Jamf como una forma de entregar equipos listos para trabajar, automatizar aplicaciones y escalar sin cargar al equipo de TI.'],
-    ['📱', 'Dispositivos compartidos', 'Jamf Setup y Jamf Reset permiten adaptar el equipo por rol, usar SSO y limpiar los datos al finalizar cada jornada.']
+    ['🛡️', 'Acceso móvil y superficie de ataque', company + ' opera en ' + industry + ' y reporta un entorno con múltiples servicios digitales. Para ' + role + ', el riesgo no es solo cuántos iPhone o iPad existen, sino si cada acceso móvil está validado antes de llegar a aplicaciones corporativas. Jamf puede aplicar postura de seguridad, restricciones y acceso condicional por dispositivo.'],
+    ['🔐', 'Identidad y datos corporativos', hasCollab ? 'El uso de herramientas colaborativas y almacenamiento en la nube aumenta la probabilidad de que un dispositivo iOS acceda a conversaciones, archivos o credenciales fuera del control de TI. Jamf puede reforzar configuraciones, separar el uso corporativo y retirar acceso cuando el equipo deje de cumplir.' : 'La diversidad de servicios detectados sugiere que el acceso móvil puede estar distribuido entre varias aplicaciones. Jamf puede ayudar a que ' + company + ' aplique una política consistente de identidad y acceso desde el dispositivo.'],
+    ['🌐', 'Riesgo en aplicaciones expuestas', hasWeb ? 'La presencia de servicios web y plataformas públicas amplía los puntos desde los que un usuario móvil puede interactuar con la operación. Jamf puede reducir el riesgo en el endpoint mediante configuraciones seguras, actualización controlada y bloqueo de equipos comprometidos.' : 'La operación digital de la cuenta requiere que los dispositivos móviles mantengan acceso confiable a sus aplicaciones. Jamf puede reducir la exposición del endpoint con configuraciones seguras, actualización controlada y bloqueo remoto.'],
+    ['✅', 'Evidencia de cumplimiento', 'Para una empresa de ' + industry + ', una auditoría necesita demostrar que los dispositivos que acceden a información corporativa mantienen una configuración mínima. Jamf puede generar visibilidad del estado de cada equipo y ayudar a corregir desviaciones sin esperar a una revisión manual.'],
+    ['📱', 'Respuesta ante pérdida o compromiso', 'Aunque la flota iOS fuera pequeña o aún no esté cuantificada, cada equipo puede contener sesiones activas y datos de negocio. Jamf permite retirar acceso, bloquear o borrar información de forma remota, reduciendo el tiempo entre un incidente y la contención.']
   ].map(([icon, title, text]) => ({ icon, title, text }));
   const questions = [
-    ['🔎', 'Visibilidad y control', '¿Cómo administra y monitorea hoy los dispositivos Apple distribuidos en ' + company + '?'],
-    ['🛡️', 'Riesgo y cumplimiento', '¿Qué controles utilizan para demostrar cumplimiento y evitar fugas de información en ' + industry + '?'],
-    ['💬', 'Fricción operativa', '¿Qué impacto tiene para sus clientes y colaboradores que un equipo falle o no tenga la aplicación correcta?'],
-    ['👥', 'Equipos compartidos', '¿Cómo aseguran que cada turno acceda solo a las herramientas de su rol y deje el equipo limpio?'],
-    ['📈', 'Carga de TI y escala', '¿Cuánto trabajo manual requeriría desplegar cientos de dispositivos Apple en ' + company + '?']
+    ['🔎', 'Acceso desde iOS', '¿Qué aplicaciones y datos de ' + company + ' pueden abrirse hoy desde un iPhone o iPad, y qué condición debe cumplir el dispositivo antes de permitirlo?'],
+    ['🔐', 'Identidad y sesiones', 'Para el equipo de ' + role + ', ¿cómo revocan sesiones y accesos cuando un dispositivo se pierde, cambia de usuario o deja de cumplir la política?'],
+    ['🌐', 'Aplicaciones críticas', '¿Qué aplicación móvil sería más sensible para la operación de ' + company + ' si un equipo estuviera comprometido?'],
+    ['✅', 'Prueba de cumplimiento', '¿Quién puede demostrar hoy qué dispositivos iOS tienen acceso a información corporativa y si mantienen una configuración segura?'],
+    ['📱', 'Contención del incidente', 'Si mañana se reportara la pérdida de un iPhone o iPad, ¿cuánto tiempo tardarían en bloquearlo y proteger los datos?']
   ].map(([icon, title, text]) => ({ icon, title, text }));
   return { talking_points: topics, qualifying_questions: questions, source: 'fallback' };
+}
+function playbookQualityCheck(playbook, row) {
+  const all = [...(playbook.talking_points || []), ...(playbook.qualifying_questions || [])].map(item => String(item.text || '').toLowerCase());
+  const unique = new Set(all);
+  const techValues = String(row.Technologies || '').split(/[,;|]/).map(value => value.trim().toLowerCase()).filter(value => value.length > 3);
+  const repeatedTechnologyList = techValues.length >= 4 && all.some(text => techValues.filter(value => text.includes(value)).length >= 4);
+  return all.length === 10 && unique.size >= 9 && !repeatedTechnologyList && all.every(text => text.length >= 80);
 }
 function normalizePlaybook(value, row) {
   const fallback = fallbackPlaybook(row);
@@ -93,7 +104,7 @@ async function generateClaudePlaybook(row) {
   const text = payload.content?.find(item => item.type === 'text')?.text;
   if (!text) throw new Error('Claude returned no playbook');
   const cleanText = text.replace(/^\s*\`\`\`json\s*/i, '').replace(/\s*\`\`\`\s*$/i, '').trim();
-  return normalizePlaybook(JSON.parse(cleanText), row);
+  const result = normalizePlaybook(JSON.parse(cleanText), row);\n  if (!playbookQualityCheck(result, row)) throw new Error('Claude generated a generic playbook');\n  return result;
 }
 
 app.post('/api/login', (req, res) => {

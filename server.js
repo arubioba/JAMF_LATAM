@@ -169,10 +169,10 @@ app.get('/api/companies/:id/csv', requireAuth, (req, res) => {
   if (!row) return res.status(404).send('Empresa no encontrada');
   const key = companyKey(row);
   const matchingRows = leads.filter(candidate => companyKey(candidate) === key);
-  const csv = portalColumns.map(csvEscape).join(',') + '\\r\\n' + matchingRows.map(candidate => portalColumns.map(column => csvEscape(candidate[column])).join(',')).join('\\r\\n') + '\\r\\n';
+  const csv = portalColumns.map(csvEscape).join(',') + '\r\n' + matchingRows.map(candidate => portalColumns.map(column => csvEscape(candidate[column])).join(',')).join('\r\n') + '\r\n';
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="jamf-lead-${Number(req.params.id) + 1}-empresa.csv"`);
-  res.send('\\ufeff' + csv);
+  res.send('\ufeff' + csv);
 });
 
 app.use(express.static(path.join(__dirname, 'public')));

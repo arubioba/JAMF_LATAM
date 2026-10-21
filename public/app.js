@@ -49,8 +49,11 @@ async function generatePlaybook(id, regenerate = false) {
   try {
     const playbook = await api(`/api/companies/${id}/playbook${regenerate ? '?regenerate=1' : ''}`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
     const render = (items) => items.map(item => `<div class="playbook-item"><span class="playbook-item-icon">${escapeHtml(item.icon)}</span><div><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.text)}</p></div></div>`).join('');
-    output.innerHTML = `<section class="playbook-section"><article class="playbook-card"><h3>🗣️ Key Talking Points</h3>${render(playbook.talking_points)}</article><article class="playbook-card"><h3>🎯 Preguntas clave de calificación</h3>${render(playbook.qualifying_questions)}</article></section>`;
-  } catch (error) { output.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`; }
-  button.disabled = false; button.textContent = playbook.source === 'cache' ? '↻ Regenerar Playbook' : '🧭 Playbook';
-  if (playbook.source === 'cache' || playbook.source === 'generated') button.onclick = () => generatePlaybook(id, true);
+    const origin = playbook.source === 'cache' ? 'Playbook guardado para esta cuenta' : 'Playbook generado y guardado';
+    output.innerHTML = `<section class="playbook-section"><article class="playbook-card"><h3>🗣️ Key Talking Points</h3>${render(playbook.talking_points)}</article><article class="playbook-card"><h3>🎯 Preguntas clave de calificación</h3>${render(playbook.qualifying_questions)}</article><p class="playbook-origin">${origin}</p></section>`;
+    button.disabled = false; button.textContent = '↻ Regenerar Playbook'; button.onclick = () => generatePlaybook(id, true);
+  } catch (error) {
+    output.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
+    button.disabled = false; button.textContent = '🧭 Playbook';
+  }
 }

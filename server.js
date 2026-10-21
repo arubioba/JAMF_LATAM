@@ -37,7 +37,7 @@ async function ensureDatabase() {
   if (!databaseReady) databaseReady = pool.query(`CREATE TABLE IF NOT EXISTS jamf_playbooks (company_key TEXT PRIMARY KEY, context_hash TEXT NOT NULL, playbook_json JSONB NOT NULL, model TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`).then(() => true).catch(error => { console.error('Playbook database unavailable:', error.message); return false; });
   return databaseReady;
 }
-const PLAYBOOK_PROMPT_VERSION = 'security-insights-v3';
+const PLAYBOOK_PROMPT_VERSION = 'security-insights-v4';
 function contextHash(value) { return crypto.createHash('sha256').update(JSON.stringify({ promptVersion: PLAYBOOK_PROMPT_VERSION, ...value })).digest('hex'); }
 function isAppleCustomer(row) { return /\b(apple|ios|iphone|ipad|macos|jamf)\b/i.test(String(row.Technologies || '')) ? 'Yes' : 'No'; }
 function rowValue(row, column) { return column === 'Apple Customer' ? isAppleCustomer(row) : (row[column] ?? ''); }
@@ -64,21 +64,31 @@ function fallbackPlaybook(row) {
     ['✅', 'Evidencia de cumplimiento', 'Para una empresa de ' + industry + ', una auditoría necesita demostrar que los dispositivos que acceden a información corporativa mantienen una configuración mínima. Jamf puede generar visibilidad del estado de cada equipo y ayudar a corregir desviaciones sin esperar a una revisión manual.'],
     ['📱', 'Respuesta ante pérdida o compromiso', 'Aunque la flota iOS fuera pequeña o aún no esté cuantificada, cada equipo puede contener sesiones activas y datos de negocio. Jamf permite retirar acceso, bloquear o borrar información de forma remota, reduciendo el tiempo entre un incidente y la contención.']
   ].map(([icon, title, text]) => ({ icon, title, text }));
-  const questions = [
+  const apple = isAppleCustomer(row) === 'Yes';
+  const questions = apple ? [
     ['🔎', 'Acceso desde iOS', '¿Qué aplicaciones y datos de ' + company + ' pueden abrirse hoy desde un iPhone o iPad, y qué condición debe cumplir el dispositivo antes de permitirlo?'],
     ['🔐', 'Identidad y sesiones', 'Para el equipo de ' + role + ', ¿cómo revocan sesiones y accesos cuando un dispositivo se pierde, cambia de usuario o deja de cumplir la política?'],
     ['🌐', 'Aplicaciones críticas', '¿Qué aplicación móvil sería más sensible para la operación de ' + company + ' si un equipo estuviera comprometido?'],
     ['✅', 'Prueba de cumplimiento', '¿Quién puede demostrar hoy qué dispositivos iOS tienen acceso a información corporativa y si mantienen una configuración segura?'],
     ['📱', 'Contención del incidente', 'Si mañana se reportara la pérdida de un iPhone o iPad, ¿cuánto tiempo tardarían en bloquearlo y proteger los datos?']
-  ].map(([icon, title, text]) => ({ icon, title, text }));
-  return { talking_points: topics, qualifying_questions: questions, source: 'fallback' };
+  ] : [
+    ['🔎', 'Huella Apple real', 'Apple Customer aparece como No. ¿La cuenta no utiliza iPhone o iPad corporativos, o existe uso ocasional, BYOD o una adopción prevista que todavía no está registrada?'],
+    ['🔐', 'Acceso futuro', 'Si ' + company + ' incorporara dispositivos Apple, ¿qué aplicaciones o datos deberían protegerse desde el primer día?'],
+    ['🌐', 'Caso de uso', '¿Qué equipo o proceso de ' + company + ' tendría más sentido para una primera adopción de iPhone o iPad?'],
+    ['✅', 'Criterios de decisión', '¿Qué requisitos de seguridad, identidad y cumplimiento tendrían que cumplirse antes de autorizar dispositivos Apple?'],
+    ['📱', 'Prioridad de negocio', '¿Existe hoy un problema operativo o de experiencia que justificaría evaluar una iniciativa Apple en ' + company + '?']
+  ];
+  const mappedQuestions = questions.map(([icon, title, text]) => ({ icon, title, text }));
+  return { talking_points: topics, qualifying_questions: mappedQuestions, source: 'fallback' };
 }
 function playbookQualityCheck(playbook, row) {
   const all = [...(playbook.talking_points || []), ...(playbook.qualifying_questions || [])].map(item => String(item.text || '').toLowerCase());
   const unique = new Set(all);
   const techValues = String(row.Technologies || '').split(/[,;|]/).map(value => value.trim().toLowerCase()).filter(value => value.length > 3);
   const repeatedTechnologyList = techValues.length >= 4 && all.some(text => techValues.filter(value => text.includes(value)).length >= 4);
-  return all.length === 10 && unique.size >= 9 && !repeatedTechnologyList && all.every(text => text.length >= 80);
+  const apple = isAppleCustomer(row) === 'Yes';
+  const contradictsNo = !apple && all.some(text => /cientos de dispositivos|flota apple existente|dispositivos apple distribuidos|pérdida de un iphone|pérdida de un ipad/i.test(text));
+  return all.length === 10 && unique.size >= 9 && !repeatedTechnologyList && !contradictsNo && all.every(text => text.length >= 80);
 }
 function normalizePlaybook(value, row) {
   const fallback = fallbackPlaybook(row);
@@ -95,7 +105,7 @@ async function generateClaudePlaybook(row) {
     body: JSON.stringify({
       model: process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001',
       max_tokens: 1800,
-      system: 'Eres un estratega senior de ciberseguridad y ventas de Jamf para LATAM. Tu trabajo no es describir productos ni repetir la columna Technologies. Debes producir insights específicos y accionables para la cuenta. Analiza el sector, tamaño, país, cargo del contacto, Apple Customer, tecnologías detectadas y número de dispositivos iOS si existe. Si # Devices IOS está vacío o es bajo, asume explícitamente que cada dispositivo sigue siendo un punto potencial de vulnerabilidad, pero no inventes un número. En talking_points, genera exactamente cinco bullet points de seguridad informática, cada uno con: una hipótesis de exposición o riesgo concreta para esta cuenta, por qué esa hipótesis es relevante para su sector o tamaño, y cómo Jamf podría reducir ese riesgo en dispositivos iOS. No listes productos de forma aislada. Conecta cada insight con una consecuencia de negocio o cumplimiento. En qualifying_questions, genera exactamente cinco preguntas de descubrimiento distintas entre sí, adaptadas al rol del contacto y a los riesgos inferidos. Cada pregunta debe servir para validar o refutar una hipótesis concreta del análisis, no preguntar genéricamente cómo administran dispositivos. Evita frases intercambiables, preguntas repetidas, claims no soportados y texto promocional. Si faltan datos, conviértelos en una pregunta de validación. Devuelve únicamente JSON válido sin markdown, con exactamente cinco objetos con icon, title y text en talking_points y qualifying_questions. Playbook base:\\n' + playbookSource,
+      system: 'Eres un estratega senior de ciberseguridad y ventas de Jamf para LATAM. Tu trabajo no es describir productos ni repetir la columna Technologies. Debes producir insights específicos y accionables para la cuenta. Analiza el sector, tamaño, país, cargo del contacto, Apple Customer, tecnologías detectadas y número de dispositivos iOS si existe. Regla crítica: si Apple Customer es No, no afirmes que la cuenta ya tiene dispositivos Apple, no hables de una flota existente, no menciones cientos de dispositivos y no describas controles como si ya fueran necesarios. En ese caso, formula el análisis como oportunidad de validación, adopción futura, BYOD o acceso ocasional a servicios corporativos. Si Apple Customer es Yes, puedes analizar la protección de la huella Apple existente. Si # Devices IOS está vacío o es bajo, no inventes un número; trata cada dispositivo conocido o potencial como un punto que debe validarse. En talking_points, genera exactamente cinco bullet points de seguridad informática, cada uno con: una hipótesis de exposición o riesgo concreta para esta cuenta, por qué esa hipótesis es relevante para su sector o tamaño, y cómo Jamf podría reducir ese riesgo en dispositivos iOS. No listes productos de forma aislada. Conecta cada insight con una consecuencia de negocio o cumplimiento. En qualifying_questions, genera exactamente cinco preguntas de descubrimiento distintas entre sí, adaptadas al rol del contacto y a los riesgos inferidos. Cada pregunta debe servir para validar o refutar una hipótesis concreta del análisis, no preguntar genéricamente cómo administran dispositivos. Evita frases intercambiables, preguntas repetidas, claims no soportados y texto promocional. Si faltan datos, conviértelos en una pregunta de validación. Devuelve únicamente JSON válido sin markdown, con exactamente cinco objetos con icon, title y text en talking_points y qualifying_questions. Playbook base:\\n' + playbookSource,
       messages: [{ role: 'user', content: 'Contexto de la empresa:\n' + JSON.stringify(playbookContext(row), null, 2) }]
     })
   });

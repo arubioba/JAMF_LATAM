@@ -1,6 +1,8 @@
 import express from 'express';
 import cookieSession from 'cookie-session';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
+import pg from 'pg';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +15,10 @@ const adminPassword = process.env.ADMIN_PASSWORD;
 const sessionSecret = process.env.SESSION_SECRET || 'change-this-session-secret';
 const leads = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'leads.json'), 'utf8'));
 const columns = leads.length ? Object.keys(leads[0]) : [];
+const portalColumns = columns.includes('# Devices IOS') ? columns : [...columns, '# Devices IOS'];
+const { Pool } = pg;
+const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL.includes('railway') ? { rejectUnauthorized: false } : undefined }) : null;
+let databaseReady = null;
 const industryColumn = columns.find(column => column.trim().toLowerCase() === 'industry') || 'Industry';
 const industries = [...new Set(leads.map(row => String(row[industryColumn] ?? '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 const playbookSource = fs.existsSync(path.join(__dirname, 'data', 'playbook_comercial_jamf.md'))
@@ -25,11 +31,19 @@ app.use(cookieSession({ name: 'jamf_session', keys: [sessionSecret], httpOnly: t
 
 function isAuthenticated(req) { return Boolean(req.session?.authenticated); }
 function requireAuth(req, res, next) { if (!isAuthenticated(req)) return res.status(401).json({ error: 'No autorizado' }); next(); }
+async function ensureDatabase() {
+  if (!pool) return false;
+  if (!databaseReady) databaseReady = pool.query(`CREATE TABLE IF NOT EXISTS jamf_playbooks (company_key TEXT PRIMARY KEY, context_hash TEXT NOT NULL, playbook_json JSONB NOT NULL, model TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`).then(() => true).catch(error => { console.error('Playbook database unavailable:', error.message); return false; });
+  return databaseReady;
+}
+function contextHash(value) { return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
 function csvEscape(value) { const text = String(value ?? ''); return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text; }
 
 function playbookContext(row) {
-  const allowed = ['Company Name', 'Industry', '# Employees', 'Technologies', 'Solución JAMF Recomendada', 'Approach Comercial Recomendado', 'Title', 'Company City', 'Company Country', 'Website'];
-  return Object.fromEntries(allowed.filter(key => columns.includes(key)).map(key => [key, row[key] ?? '']));
+  const allowed = ['Company Name', 'Industry', '# Employees', '# Devices IOS', 'Technologies', 'Solución JAMF Recomendada', 'Approach Comercial Recomendado', 'Title', 'Company City', 'Company Country', 'Website'];
+  const context = Object.fromEntries(allowed.filter(key => portalColumns.includes(key)).map(key => [key, row[key] ?? '']));
+  context['Account contact count'] = leads.filter(candidate => companyKey(candidate) === companyKey(row)).length;
+  return context;
 }
 function fallbackPlaybook(row) {
   const company = row['Company Name'] || 'esta empresa';
@@ -66,7 +80,7 @@ async function generateClaudePlaybook(row) {
     body: JSON.stringify({
       model: process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001',
       max_tokens: 1800,
-      system: 'Eres un especialista senior de ventas de Jamf para LATAM. Personaliza un playbook comercial práctico en español usando exclusivamente el contexto de la empresa y el playbook base. No inventes datos, no menciones que eres IA. Devuelve únicamente JSON válido sin markdown, con exactamente cinco objetos con icon, title y text en talking_points y qualifying_questions. Playbook base:\n' + playbookSource,
+      system: 'Eres un estratega senior de ventas de Jamf para LATAM. Analiza la cuenta y crea un playbook comercial verdaderamente específico para esta empresa y este contacto. Usa exclusivamente los datos entregados y el playbook base. No inventes hechos. Si un dato está vacío, formula una hipótesis como pregunta, nunca como afirmación. Cada talking point debe incluir una señal concreta de la cuenta, explicar el impacto comercial y conectar con una capacidad Jamf. Cada pregunta debe estar adaptada al cargo, industria, tamaño, tecnologías y posible operación de la cuenta. Evita textos intercambiables, frases genéricas y repetir la misma estructura. Los cinco talking points deben cubrir ángulos distintos: productividad, seguridad, cumplimiento, despliegue y dispositivos compartidos, pero aterrizados al contexto real. Devuelve únicamente JSON válido sin markdown, con exactamente cinco objetos con icon, title y text en talking_points y qualifying_questions. Playbook base:\\n' + playbookSource,
       messages: [{ role: 'user', content: 'Contexto de la empresa:\n' + JSON.stringify(playbookContext(row), null, 2) }]
     })
   });
@@ -119,14 +133,26 @@ app.get('/api/companies', requireAuth, (req, res) => {
 app.get('/api/companies/:id', requireAuth, (req, res) => {
   const row = leads[Number(req.params.id)];
   if (!row) return res.status(404).json({ error: 'Empresa no encontrada.' });
-  const normalizedRow = Object.fromEntries(columns.map(column => [column, row[column] ?? '']));
+  const normalizedRow = Object.fromEntries(portalColumns.map(column => [column, row[column] ?? '']));
   res.json(normalizedRow);
 });
 app.post('/api/companies/:id/playbook', requireAuth, async (req, res) => {
   const row = leads[Number(req.params.id)];
   if (!row) return res.status(404).json({ error: 'Empresa no encontrada.' });
+  const context = playbookContext(row);
+  const key = companyKey(row);
+  const hash = contextHash(context);
+  const forceRegenerate = req.query.regenerate === '1';
   try {
-    res.json(await generateClaudePlaybook(row));
+    if (!forceRegenerate && await ensureDatabase()) {
+      const cached = await pool.query('SELECT playbook_json, model, created_at FROM jamf_playbooks WHERE company_key = $1 AND context_hash = $2', [key, hash]);
+      if (cached.rows[0]) return res.json({ ...cached.rows[0].playbook_json, source: 'cache', model: cached.rows[0].model, created_at: cached.rows[0].created_at });
+    }
+    const playbook = await generateClaudePlaybook(row);
+    if (await ensureDatabase()) {
+      await pool.query('INSERT INTO jamf_playbooks (company_key, context_hash, playbook_json, model) VALUES ($1, $2, $3, $4) ON CONFLICT (company_key) DO UPDATE SET context_hash = EXCLUDED.context_hash, playbook_json = EXCLUDED.playbook_json, model = EXCLUDED.model, created_at = NOW()', [key, hash, JSON.stringify(playbook), process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001']);
+    }
+    res.json({ ...playbook, source: 'generated', model: process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001' });
   } catch (error) {
     console.error('Playbook generation fallback:', error.message);
     res.json(fallbackPlaybook(row));
@@ -143,7 +169,7 @@ app.get('/api/companies/:id/csv', requireAuth, (req, res) => {
   if (!row) return res.status(404).send('Empresa no encontrada');
   const key = companyKey(row);
   const matchingRows = leads.filter(candidate => companyKey(candidate) === key);
-  const csv = columns.map(csvEscape).join(',') + '\\r\\n' + matchingRows.map(candidate => columns.map(column => csvEscape(candidate[column])).join(',')).join('\\r\\n') + '\\r\\n';
+  const csv = portalColumns.map(csvEscape).join(',') + '\\r\\n' + matchingRows.map(candidate => portalColumns.map(column => csvEscape(candidate[column])).join(',')).join('\\r\\n') + '\\r\\n';
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="jamf-lead-${Number(req.params.id) + 1}-empresa.csv"`);
   res.send('\\ufeff' + csv);

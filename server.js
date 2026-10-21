@@ -16,6 +16,7 @@ const sessionSecret = process.env.SESSION_SECRET || 'change-this-session-secret'
 const leads = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'leads.json'), 'utf8'));
 const columns = leads.length ? Object.keys(leads[0]) : [];
 const portalColumns = columns.includes('# Devices IOS') ? columns : [...columns, '# Devices IOS'];
+if (!portalColumns.includes('Apple Customer')) portalColumns.push('Apple Customer');
 const { Pool } = pg;
 const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_URL.includes('railway') ? { rejectUnauthorized: false } : undefined }) : null;
 let databaseReady = null;
@@ -37,10 +38,12 @@ async function ensureDatabase() {
   return databaseReady;
 }
 function contextHash(value) { return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
+function isAppleCustomer(row) { return /\\b(apple|ios|iphone|ipad|macos|jamf)\\b/i.test(String(row.Technologies || '')) ? 'Yes' : 'No'; }
+function rowValue(row, column) { return column === 'Apple Customer' ? isAppleCustomer(row) : (row[column] ?? ''); }
 function csvEscape(value) { const text = String(value ?? ''); return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text; }
 
 function playbookContext(row) {
-  const allowed = ['Company Name', 'Industry', '# Employees', '# Devices IOS', 'Technologies', 'Solución JAMF Recomendada', 'Approach Comercial Recomendado', 'Title', 'Company City', 'Company Country', 'Website'];
+  const allowed = ['Company Name', 'Industry', '# Employees', '# Devices IOS', 'Apple Customer', 'Technologies', 'Solución JAMF Recomendada', 'Approach Comercial Recomendado', 'Title', 'Company City', 'Company Country', 'Website'];
   const context = Object.fromEntries(allowed.filter(key => portalColumns.includes(key)).map(key => [key, row[key] ?? '']));
   context['Account contact count'] = leads.filter(candidate => companyKey(candidate) === companyKey(row)).length;
   return context;
@@ -133,7 +136,7 @@ app.get('/api/companies', requireAuth, (req, res) => {
 app.get('/api/companies/:id', requireAuth, (req, res) => {
   const row = leads[Number(req.params.id)];
   if (!row) return res.status(404).json({ error: 'Empresa no encontrada.' });
-  const normalizedRow = Object.fromEntries(portalColumns.map(column => [column, row[column] ?? '']));
+  const normalizedRow = Object.fromEntries(portalColumns.map(column => [column, rowValue(row, column)]));
   res.json(normalizedRow);
 });
 app.post('/api/companies/:id/playbook', requireAuth, async (req, res) => {
@@ -169,7 +172,7 @@ app.get('/api/companies/:id/csv', requireAuth, (req, res) => {
   if (!row) return res.status(404).send('Empresa no encontrada');
   const key = companyKey(row);
   const matchingRows = leads.filter(candidate => companyKey(candidate) === key);
-  const csv = portalColumns.map(csvEscape).join(',') + '\r\n' + matchingRows.map(candidate => portalColumns.map(column => csvEscape(candidate[column])).join(',')).join('\r\n') + '\r\n';
+  const csv = portalColumns.map(csvEscape).join(',') + '\r\n' + matchingRows.map(candidate => portalColumns.map(column => csvEscape(rowValue(candidate, column))).join(',')).join('\r\n') + '\r\n';
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="jamf-lead-${Number(req.params.id) + 1}-empresa.csv"`);
   res.send('\ufeff' + csv);

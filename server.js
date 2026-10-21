@@ -37,7 +37,7 @@ async function ensureDatabase() {
   if (!databaseReady) databaseReady = pool.query(`CREATE TABLE IF NOT EXISTS jamf_playbooks (company_key TEXT PRIMARY KEY, context_hash TEXT NOT NULL, playbook_json JSONB NOT NULL, model TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`).then(() => true).catch(error => { console.error('Playbook database unavailable:', error.message); return false; });
   return databaseReady;
 }
-const PLAYBOOK_PROMPT_VERSION = 'security-insights-v2';
+const PLAYBOOK_PROMPT_VERSION = 'security-insights-v3';
 function contextHash(value) { return crypto.createHash('sha256').update(JSON.stringify({ promptVersion: PLAYBOOK_PROMPT_VERSION, ...value })).digest('hex'); }
 function isAppleCustomer(row) { return /\b(apple|ios|iphone|ipad|macos|jamf)\b/i.test(String(row.Technologies || '')) ? 'Yes' : 'No'; }
 function rowValue(row, column) { return column === 'Apple Customer' ? isAppleCustomer(row) : (row[column] ?? ''); }

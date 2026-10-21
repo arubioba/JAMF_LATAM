@@ -38,7 +38,7 @@ async function ensureDatabase() {
   return databaseReady;
 }
 function contextHash(value) { return crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex'); }
-function isAppleCustomer(row) { return /\\b(apple|ios|iphone|ipad|macos|jamf)\\b/i.test(String(row.Technologies || '')) ? 'Yes' : 'No'; }
+function isAppleCustomer(row) { return /\b(apple|ios|iphone|ipad|macos|jamf)\b/i.test(String(row.Technologies || '')) ? 'Yes' : 'No'; }
 function rowValue(row, column) { return column === 'Apple Customer' ? isAppleCustomer(row) : (row[column] ?? ''); }
 function csvEscape(value) { const text = String(value ?? ''); return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text; }
 

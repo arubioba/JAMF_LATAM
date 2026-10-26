@@ -12,6 +12,10 @@ app.set('trust proxy', 1);
 const port = process.env.PORT || 3000;
 const adminUser = process.env.ADMIN_USER || 'admin';
 const adminPassword = process.env.ADMIN_PASSWORD;
+const portalUsers = [
+  [process.env.PORTAL_USER_1, process.env.PORTAL_PASSWORD_1],
+  [process.env.PORTAL_USER_2, process.env.PORTAL_PASSWORD_2]
+].filter(([username, password]) => username && password).map(([username, password]) => ({ username: String(username).trim().toLowerCase(), password: String(password) }));
 const sessionSecret = process.env.SESSION_SECRET || 'change-this-session-secret';
 const leads = JSON.parse(fs.readFileSync(path.join(__dirname, 'data', 'leads.json'), 'utf8'));
 const columns = leads.length ? Object.keys(leads[0]) : [];
@@ -120,8 +124,12 @@ async function generateClaudePlaybook(row) {
 }
 
 app.post('/api/login', (req, res) => {
-  if (!adminPassword) return res.status(500).json({ error: 'Falta configurar ADMIN_PASSWORD en Railway.' });
-  if (req.body.username === adminUser && req.body.password === adminPassword) { req.session = { authenticated: true }; return res.json({ ok: true }); }
+  const username = String(req.body.username || '').trim().toLowerCase();
+  const password = String(req.body.password || '');
+  const validAdmin = adminPassword && username === String(adminUser).trim().toLowerCase() && password === adminPassword;
+  const validPortalUser = portalUsers.some(user => user.username === username && user.password === password);
+  if (validAdmin || validPortalUser) { req.session = { authenticated: true }; return res.json({ ok: true }); }
+  if (!adminPassword && !portalUsers.length) return res.status(500).json({ error: 'No hay usuarios configurados en Railway.' });
   return res.status(401).json({ error: 'Usuario o contraseña incorrectos.' });
 });
 app.post('/api/logout', (req, res) => { req.session = null; res.json({ ok: true }); });

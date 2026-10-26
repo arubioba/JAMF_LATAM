@@ -3,6 +3,7 @@
 .login-logo{width:260px}
 .topbar .logo{width:220px}
 .field-wide{grid-column:1/-1}
+.technologies-details{padding:0;overflow:hidden}.technologies-details summary{list-style:none;cursor:pointer;padding:13px;display:flex;align-items:center;justify-content:space-between;gap:16px}.technologies-details summary::-webkit-details-marker{display:none}.technologies-details summary:hover{background:rgba(255,255,255,.035)}.technologies-details .field-name{margin:0}.technologies-toggle{color:#bfb8d5;font-size:12px}.technologies-toggle span{display:inline-block;margin-left:5px;color:var(--pink);font-size:16px;transition:transform .18s ease}.technologies-details[open] .technologies-toggle span{transform:rotate(180deg)}.technologies-value{padding:0 13px 13px}
 
 
 .search-button{display:block;margin-top:14px;padding:10px 18px;font-size:14px;min-width:0;width:auto;}
